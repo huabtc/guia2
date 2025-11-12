@@ -1,4 +1,4 @@
-module github.com/electricbubble/guia2
+module github.com/huabtc/guia2
 
 go 1.13
 
