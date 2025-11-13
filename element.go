@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 )
 
 type Element struct {
@@ -129,6 +130,23 @@ func (e *Element) Click() (err error) {
 	return
 }
 
+func (e *Element) DoubleClick() error {
+	payload := map[string]interface{}{
+		"origin": makeElementRef(e.id),
+	}
+	return e.parent.performGesture("double_click", payload)
+}
+
+func (e *Element) LongClick(duration ...float64) error {
+	payload := map[string]interface{}{
+		"origin": makeElementRef(e.id),
+	}
+	if len(duration) != 0 {
+		payload["duration"] = int64(duration[0] * 1000)
+	}
+	return e.parent.performGesture("long_click", payload)
+}
+
 func (e *Element) Clear() (err error) {
 	// register(postHandler, new Clear("/wd/hub/session/:sessionId/element/:id/clear"))
 	_, err = e.parent.executePost(nil, "/session", e.parent.sessionId, "/element", e.id, "/clear")
@@ -164,10 +182,19 @@ func (e *Element) Swipe(startX, startY, endX, endY int, steps ...int) (err error
 }
 
 func (e *Element) SwipeFloat(startX, startY, endX, endY float64, steps ...int) (err error) {
-	if len(steps) == 0 {
-		steps = []int{12}
+	rect, err := e.Rect()
+	if err != nil {
+		return err
 	}
-	return e.parent._swipe(startX, startY, endX, endY, steps[0], e.id)
+	start := PointF{
+		X: float64(rect.Point.X) + startX,
+		Y: float64(rect.Point.Y) + startY,
+	}
+	end := PointF{
+		X: float64(rect.Point.X) + endX,
+		Y: float64(rect.Point.Y) + endY,
+	}
+	return e.parent.DragFloat(start.X, start.Y, end.X, end.Y, steps...)
 }
 
 func (e *Element) SwipePoint(startPoint, endPoint Point, steps ...int) (err error) {
@@ -183,18 +210,15 @@ func (e *Element) Drag(endX, endY int, steps ...int) (err error) {
 }
 
 func (e *Element) DragFloat(endX, endY float64, steps ...int) error {
-	if len(steps) == 0 {
-		steps = []int{12 * 10}
-	} else {
-		steps[0] = 12 * 10
+	req := dragRequest{
+		Origin: makeElementRef(e.id),
+		End:    PointF{X: endX, Y: endY},
 	}
-	data := map[string]interface{}{
-		"elementId": e.id,
-		"endX":      endX,
-		"endY":      endY,
-		"steps":     steps[0],
+	if len(steps) != 0 {
+		speed := steps[0]
+		req.Speed = &speed
 	}
-	return e.parent._drag(data)
+	return e.parent.sendDrag(req)
 }
 
 func (e *Element) DragPoint(endPoint Point, steps ...int) error {
@@ -206,26 +230,41 @@ func (e *Element) DragPointF(endPoint PointF, steps ...int) (err error) {
 }
 
 func (e *Element) DragTo(destElem *Element, steps ...int) error {
-	if len(steps) == 0 {
-		steps = []int{12}
+	rect, err := destElem.Rect()
+	if err != nil {
+		return err
 	}
-	data := map[string]interface{}{
-		"elementId": e.id,
-		"destElId":  destElem.id,
-		"steps":     steps[0],
-	}
-	return e.parent._drag(data)
+	centerX := float64(rect.Point.X + rect.Size.Width/2)
+	centerY := float64(rect.Point.Y + rect.Size.Height/2)
+	return e.DragFloat(centerX, centerY, steps...)
 }
 
 func (e *Element) Flick(xOffset, yOffset, speed int) (err error) {
-	data := map[string]interface{}{
-		legacyWebElementIdentifier: e.id,
-		webElementIdentifier:       e.id,
-		"xoffset":                  xOffset,
-		"yoffset":                  yOffset,
-		"speed":                    speed,
+	if xOffset == 0 && yOffset == 0 {
+		return errors.New("both 'xOffset' and 'yOffset' cannot be zero")
 	}
-	return e.parent._flick(data)
+	direction, err := directionFromVector(xOffset, yOffset)
+	if err != nil {
+		return err
+	}
+	payload := map[string]interface{}{
+		"origin":    makeElementRef(e.id),
+		"direction": string(direction),
+	}
+	if speed != 0 {
+		if speed < 0 {
+			speed = -speed
+		}
+		payload["speed"] = speed
+	}
+	var completed bool
+	if err := e.parent.postGestureForValue("fling", payload, &completed); err != nil {
+		return err
+	}
+	if !completed {
+		return errors.New("fling gesture did not complete")
+	}
+	return nil
 }
 
 func (e *Element) ScrollTo(by BySelector, maxSwipes ...int) (err error) {

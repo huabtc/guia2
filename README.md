@@ -4,6 +4,12 @@
 
 使用 Golang 实现 [appium/appium-uiautomator2-server](https://github.com/appium/appium-uiautomator2-server) 的客户端库
 
+## 最近更新
+
+- 所有手势调用（`Tap`、`Swipe`、`Drag`、`Flick` 等）已迁移到 Appium 7.x 新增的 `/appium/gestures/*` 与 `/gestures/scroll_to` 接口，兼容最新 server。
+- 新增 `DoubleClick` 相关方法（`Driver.DoubleClick*`、`Element.DoubleClick` / `Element.LongClick`）以及调度 API（`ScheduleAction`、`ActionHistory`、`UnscheduleAction`）。
+- JSONWP `touch/down|move|up`、`touch/multi/perform` 等旧端点已被 server 移除，这些方法现在会返回提示错误，请使用 W3C Actions 代替。
+
 ## 扩展库
 
 - [electricbubble/guia2-ext-opencv](https://github.com/electricbubble/guia2-ext-opencv) 直接通过指定图片进行操作

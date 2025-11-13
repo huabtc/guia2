@@ -456,13 +456,10 @@ func (d *Driver) Tap(x, y int) (err error) {
 }
 
 func (d *Driver) TapFloat(x, y float64) (err error) {
-	// register(postHandler, new Tap("/wd/hub/session/:sessionId/appium/tap"))
-	data := map[string]interface{}{
-		"x": x,
-		"y": y,
+	payload := map[string]interface{}{
+		"offset": PointF{X: x, Y: y},
 	}
-	_, err = d.executePost(data, "/session", d.sessionId, "appium/tap")
-	return
+	return d.performGesture("click", payload)
 }
 
 func (d *Driver) TapPoint(point Point) (err error) {
@@ -473,35 +470,36 @@ func (d *Driver) TapPointF(point PointF) (err error) {
 	return d.TapFloat(point.X, point.Y)
 }
 
-func (d *Driver) _swipe(startX, startY, endX, endY interface{}, steps int, elementID ...string) (err error) {
-	// register(postHandler, new Swipe("/wd/hub/session/:sessionId/touch/perform"))
-	data := map[string]interface{}{
-		"startX": startX,
-		"startY": startY,
-		"endX":   endX,
-		"endY":   endY,
-		"steps":  steps,
+func (d *Driver) DoubleClick(x, y int) error {
+	return d.DoubleClickFloat(float64(x), float64(y))
+}
+
+func (d *Driver) DoubleClickFloat(x, y float64) error {
+	payload := map[string]interface{}{
+		"offset": PointF{X: x, Y: y},
 	}
-	if len(elementID) != 0 {
-		data["elementId"] = elementID[0]
-	}
-	_, err = d.executePost(data, "/session", d.sessionId, "touch/perform")
-	return
+	return d.performGesture("double_click", payload)
+}
+
+func (d *Driver) DoubleClickPoint(point Point) error {
+	return d.DoubleClick(point.X, point.Y)
+}
+
+func (d *Driver) DoubleClickPointF(point PointF) error {
+	return d.DoubleClickFloat(point.X, point.Y)
 }
 
 // Swipe performs a swipe from one coordinate to another using the number of steps
 // to determine smoothness and speed. Each step execution is throttled to 5ms
 // per step. So for a 100 steps, the swipe will take about 1/2 second to complete.
-//  `steps` is the number of move steps sent to the system
+//
+//	`steps` is the number of move steps sent to the system
 func (d *Driver) Swipe(startX, startY, endX, endY int, steps ...int) (err error) {
 	return d.SwipeFloat(float64(startX), float64(startY), float64(endX), float64(endY), steps...)
 }
 
 func (d *Driver) SwipeFloat(startX, startY, endX, endY float64, steps ...int) (err error) {
-	if len(steps) == 0 {
-		steps = []int{12}
-	}
-	return d._swipe(startX, startY, endX, endY, steps[0])
+	return d.DragFloat(startX, startY, endX, endY, steps...)
 }
 
 func (d *Driver) SwipePoint(startPoint, endPoint Point, steps ...int) (err error) {
@@ -512,10 +510,27 @@ func (d *Driver) SwipePointF(startPoint, endPoint PointF, steps ...int) (err err
 	return d.SwipeFloat(startPoint.X, startPoint.Y, endPoint.X, endPoint.Y, steps...)
 }
 
-func (d *Driver) _drag(data map[string]interface{}) (err error) {
-	// register(postHandler, new Drag("/wd/hub/session/:sessionId/touch/drag"))
-	_, err = d.executePost(data, "/session", d.sessionId, "touch/drag")
-	return
+type dragRequest struct {
+	Origin map[string]string
+	Start  *PointF
+	End    PointF
+	Speed  *int
+}
+
+func (d *Driver) sendDrag(req dragRequest) error {
+	payload := map[string]interface{}{
+		"end": req.End,
+	}
+	if req.Start != nil {
+		payload["start"] = req.Start
+	}
+	if req.Origin != nil {
+		payload["origin"] = req.Origin
+	}
+	if req.Speed != nil {
+		payload["speed"] = *req.Speed
+	}
+	return d.performGesture("drag", payload)
 }
 
 // Drag performs a swipe from one coordinate to another coordinate. You can control
@@ -527,17 +542,15 @@ func (d *Driver) Drag(startX, startY, endX, endY int, steps ...int) (err error) 
 }
 
 func (d *Driver) DragFloat(startX, startY, endX, endY float64, steps ...int) error {
-	if len(steps) == 0 {
-		steps = []int{12}
+	req := dragRequest{
+		Start: &PointF{X: startX, Y: startY},
+		End:   PointF{X: endX, Y: endY},
 	}
-	data := map[string]interface{}{
-		"startX": startX,
-		"startY": startY,
-		"endX":   endX,
-		"endY":   endY,
-		"steps":  steps[0],
+	if len(steps) != 0 {
+		speed := steps[0]
+		req.Speed = &speed
 	}
-	return d._drag(data)
+	return d.sendDrag(req)
 }
 
 func (d *Driver) DragPoint(startPoint Point, endPoint Point, steps ...int) error {
@@ -552,16 +565,13 @@ func (d *Driver) TouchLongClick(x, y int, duration ...float64) (err error) {
 	if len(duration) == 0 {
 		duration = []float64{1.0}
 	}
-	// register(postHandler, new TouchLongClick("/wd/hub/session/:sessionId/touch/longclick"))
-	data := map[string]interface{}{
-		"params": map[string]interface{}{
-			"x":        x,
-			"y":        y,
-			"duration": int(duration[0] * 1000),
-		},
+	payload := map[string]interface{}{
+		"offset": PointF{X: float64(x), Y: float64(y)},
+		"duration": func() int64 {
+			return int64(duration[0] * 1000)
+		}(),
 	}
-	_, err = d.executePost(data, "/session", d.sessionId, "touch/longclick")
-	return
+	return d.performGesture("long_click", payload)
 }
 
 func (d *Driver) TouchLongClickPoint(point Point, duration ...float64) (err error) {
@@ -589,12 +599,12 @@ func (d *Driver) PressBack() (err error) {
 	return
 }
 
-// public class KeyCodeModel extends BaseModel {
-//    @RequiredField
-//    public Integer keycode;
-//    public Integer metastate;
-//    public Integer flags;
-// }
+//	public class KeyCodeModel extends BaseModel {
+//	   @RequiredField
+//	   public Integer keycode;
+//	   public Integer metastate;
+//	   public Integer flags;
+//	}
 func (d *Driver) LongPressKeyCode(keyCode KeyCode, metaState KeyMeta, flags ...KeyFlag) (err error) {
 	if len(flags) == 0 {
 		flags = []KeyFlag{KFFromSystem}
@@ -639,52 +649,28 @@ func (d *Driver) PressKeyCodeAsync(keyCode KeyCode, metaState ...KeyMeta) (err e
 	return d._pressKeyCode(keyCode, metaState[0])
 }
 
-func (d *Driver) TouchDown(x, y int) (err error) {
-	// register(postHandler, new TouchDown("/wd/hub/session/:sessionId/touch/down"))
-	data := map[string]interface{}{
-		"params": map[string]interface{}{
-			"x": x,
-			"y": y,
-		},
-	}
-	_, err = d.executePost(data, "/session", d.sessionId, "touch/down")
-	return
+func (d *Driver) TouchDown(x, y int) error {
+	return errLegacyTouchCommand
 }
 
 func (d *Driver) TouchDownPoint(point Point) error {
-	return d.TouchDown(point.X, point.Y)
+	return errLegacyTouchCommand
 }
 
-func (d *Driver) TouchUp(x, y int) (err error) {
-	// register(postHandler, new TouchUp("/wd/hub/session/:sessionId/touch/up"))
-	data := map[string]interface{}{
-		"params": map[string]interface{}{
-			"x": x,
-			"y": y,
-		},
-	}
-	_, err = d.executePost(data, "/session", d.sessionId, "touch/up")
-	return
+func (d *Driver) TouchUp(x, y int) error {
+	return errLegacyTouchCommand
 }
 
 func (d *Driver) TouchUpPoint(point Point) error {
-	return d.TouchUp(point.X, point.Y)
+	return errLegacyTouchCommand
 }
 
-func (d *Driver) TouchMove(x, y int) (err error) {
-	// register(postHandler, new TouchMove("/wd/hub/session/:sessionId/touch/move"))
-	data := map[string]interface{}{
-		"params": map[string]interface{}{
-			"x": x,
-			"y": y,
-		},
-	}
-	_, err = d.executePost(data, "/session", d.sessionId, "touch/move")
-	return
+func (d *Driver) TouchMove(x, y int) error {
+	return errLegacyTouchCommand
 }
 
 func (d *Driver) TouchMovePoint(point Point) error {
-	return d.TouchMove(point.X, point.Y)
+	return errLegacyTouchCommand
 }
 
 // OpenNotification opens the notification shade.
@@ -694,26 +680,49 @@ func (d *Driver) OpenNotification() (err error) {
 	return
 }
 
-func (d *Driver) _flick(data map[string]interface{}) (err error) {
-	// register(postHandler, new Flick("/wd/hub/session/:sessionId/touch/flick"))
-	_, err = d.executePost(data, "/session", d.sessionId, "touch/flick")
-	return
-}
-
-func (d *Driver) Flick(xSpeed, ySpeed int) (err error) {
-	data := map[string]interface{}{
-		"xspeed": xSpeed,
-		"yspeed": ySpeed,
-	}
+func (d *Driver) Flick(xSpeed, ySpeed int) error {
 	if xSpeed == 0 && ySpeed == 0 {
 		return errors.New("both 'xSpeed' and 'ySpeed' cannot be zero")
 	}
-
-	return d._flick(data)
+	direction, err := directionFromVector(xSpeed, ySpeed)
+	if err != nil {
+		return err
+	}
+	area, err := d.fullScreenArea()
+	if err != nil {
+		return err
+	}
+	speed := func(a, b int) int {
+		if a < 0 {
+			a = -a
+		}
+		if b < 0 {
+			b = -b
+		}
+		if b > a {
+			return b
+		}
+		if a == 0 {
+			return 1
+		}
+		return a
+	}(xSpeed, ySpeed)
+	payload := map[string]interface{}{
+		"area":      area,
+		"direction": string(direction),
+		"speed":     speed,
+	}
+	var completed bool
+	if err := d.postGestureForValue("fling", payload, &completed); err != nil {
+		return err
+	}
+	if !completed {
+		return errors.New("fling gesture did not complete")
+	}
+	return nil
 }
 
 func (d *Driver) _scrollTo(method, selector string, maxSwipes int, elementID ...string) (err error) {
-	// register(postHandler, new ScrollTo("/wd/hub/session/:sessionId/touch/scroll"))
 	params := map[string]interface{}{
 		"strategy": method,
 		"selector": selector,
@@ -723,12 +732,9 @@ func (d *Driver) _scrollTo(method, selector string, maxSwipes int, elementID ...
 	}
 	data := map[string]interface{}{"params": params}
 	if len(elementID) != 0 {
-		data["origin"] = map[string]string{
-			legacyWebElementIdentifier: elementID[0],
-			webElementIdentifier:       elementID[0],
-		}
+		data["origin"] = makeElementRef(elementID[0])
 	}
-	_, err = d.executePost(data, "/session", d.sessionId, "touch/scroll")
+	_, err = d.executePost(data, "/session", d.sessionId, "gestures/scroll_to")
 	return
 }
 
@@ -780,19 +786,8 @@ func (ta *TouchAction) AddPointF(point PointF, startTime ...float64) *TouchActio
 	return ta.AddFloat(point.X, point.Y, startTime...)
 }
 
-func (d *Driver) MultiPointerGesture(gesture1 *TouchAction, gesture2 *TouchAction, tas ...*TouchAction) (err error) {
-	// Must provide coordinates for at least 2 pointers
-	actions := make([]*TouchAction, 0)
-	actions = append(actions, gesture1, gesture2)
-	if len(tas) != 0 {
-		actions = append(actions, tas...)
-	}
-	data := map[string]interface{}{
-		"actions": actions,
-	}
-	// register(postHandler, new MultiPointerGesture("/wd/hub/session/:sessionId/touch/multi/perform"))
-	_, err = d.executePost(data, "/session", d.sessionId, "/touch/multi/perform")
-	return
+func (d *Driver) MultiPointerGesture(_ *TouchAction, _ *TouchAction, _ ...*TouchAction) error {
+	return errLegacyTouchCommand
 }
 
 type w3cGesture map[string]interface{}
@@ -1113,8 +1108,9 @@ func (d *Driver) SetOrientation(orientation Orientation) (err error) {
 }
 
 // SetRotation
-//  `x` and `y` are ignored. We only care about `z`
-//  0/90/180/270
+//
+//	`x` and `y` are ignored. We only care about `z`
+//	0/90/180/270
 func (d *Driver) SetRotation(rotation Rotation) (err error) {
 	data := map[string]interface{}{
 		"z": rotation.Z,
